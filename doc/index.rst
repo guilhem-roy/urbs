@@ -58,16 +58,15 @@ implementation.
    implementation
    api
 
-ADMM module for regional decomposition
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+CoTraDis module
+^^^^^^^^^^^^^^^
 
-Continue here if you would like to use the regional decomposition module, using 
-the alternating direction method of multipliers (ADMM).
+Continue here for the usage instructions on the coupled transmission-distribution system (CoTraDis) module.
 
 .. toctree::
    :maxdepth: 1
    
-   admm
+   CoTraDis
 
 Features
 --------
