@@ -12,7 +12,7 @@ Major additions & modifications were applied to the the following scripts:
 
 which will be described below.
 | Before dealing with the code, a short summary of required aspects to consider will be given.
-    Distribution systems are different from transmission systems in a number of facets. Diffrerences to highlight are the
+    Distribution systems are different from transmission systems in a number of facets. Differences to highlight are the
     reactance-to-resistance ratio (X/R) and their common radial composition. Depending on these attributes an AC
     optimal-power-flow model may be helpful to deal with distribution system reactive power and voltage constraints.
     Hence, the "LinDistFlow" model linearization has been introduced into the given framework as shown in `transmission.py <distribution_system_implementation.html#transmission-section>`_.
