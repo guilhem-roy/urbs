@@ -1,41 +1,37 @@
 .. _distribution_system_implementation:
 
-Automated Coupling of Modularly Defined System Modules
-=======================================================
+Distribution System Framework
+===================================
 
-This section explains the implementations to consider specif distribution system characteristics.
-Major additions/modifications were done on the following, already existing scripts:
+This section explains the implementations to consider specific distribution system characteristics.
+Major additions & modifications were applied to the the following scripts:
 
-- `model.py: <distribution_system_implementation.html#model-section>`_ ``urbs/model.py``
+- `model.py: <distribution_system_implementation.html#model-section>`_
 
-- `transmission.py: <distribution_system_implementation.html#transmission-section>`_ ``urbs/transmission.py``
-
+- `transmission.py: <distribution_system_implementation.html#transmission-section>`_
 
 which will be described below.
+| Before dealing with the code, a short summary of required aspects to consider will be given.
+    Distribution systems are different from transmission systems in a number of facets. Diffrerences to highlight are the
+    reactance-to-resistance ratio (X/R) and their common radial composition. Depending on these attributes an AC
+    optimal-power-flow model may be helpful to deal with distribution system reactive power and voltage constraints.
+    Hence, the "LinDistFlow" model linearization has been introduced into the given framework as shown in `transmission.py <distribution_system_implementation.html#transmission-section>`_.
+    Besides, we enhanced the `urbs` framework by integrating several aspects that characterize classic distribution systems:
 
+- radially-operated open ring grid segments
 
-
-.. _theory-section
-
-Distribution System Model Framework
--------------------------------------
-Distribution systems are different from transmission systems in a number of aspects such as the reactance-to-resistance ratio (X/R) and the typical radial, tree-like structure. Depending on system size, voltage level and the corresponding X/R ratio an alternating current optimal-power-flow model is required to consider distribution system reactive power and voltage constraints. Therefore, the "Linearized Distribution Flow" (LinDistFlow) model linearization has been introduced into our framework as shown in `transmission.py <distribution_system_implementation.html#transmission-section>`_.
-
-Besides, we extended the `urbs` framework by incorporating the following model components to characterize typical distribution grids:
-
-- radially-operated open ring grid segments denoted as microgrids
-
-- a boundary bus with a transformer between both systems
+- a transformer between both system levels modelled with a boundary bus
 
 - reactive power demand for households
 
 - reactive power line flows and an apparent power line flow constraint
 
-- a centralized reactive power compensation system and
+- a central reactive power compensation system
 
-- inverters with a defined ratio of possible reactive to active power generation.
+- inverters with a predefined permittible ratio of reactive to active power generation.
 
-The microgrids to describe the distribution system can be freely defined with the microgrid input sheets. The predefined microgrids in the repository are illustrated below:
+The microgrids to describe the distribution system can be freely defined with the microgrid input sheets.
+The predefined microgrid structure with their assigned technologies as provided in the input data are illustrated below:
 
 .. image:: graphics/Microgrids.jpg
 
@@ -138,4 +134,3 @@ Moreover, the voltage of all nodes within the introduced slackbus set is scaled 
 	
 	def def_slackbus_voltage_rule(m, tm, stf, sin):
 		return (m.voltage_squared[tm, stf, sin] == m.site_dict['base-voltage'][(stf, sin)]**2)
-
