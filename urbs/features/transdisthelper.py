@@ -33,7 +33,7 @@ def create_transdist_data(data, microgrid_data_initial, cross_scenario_data):
                 ### scale capacities, commodities, demand, areas and the loadprofile with multiplicator number of the microgrid
                 microgrid_data_input, demand_shift = multiplicator_scaling(mode, data, microgrid_data_input,
                                                                            microgrid_multiplicator_list, set_number, type_nr)
-                ### shift demand from transmission level to distribution level
+                ### shift demand from distribution level to transmission level
                 data, mobility_transmission_shift, heat_transmission_shift = shift_demand(data, microgrid_data_input, set_number,
                                                                                           type_nr, demand_shift, loadprofile_BEV,
                                                                                           top_region_name, mobility_transmission_shift,
@@ -108,6 +108,7 @@ def multiplicator_scaling(mode, data, microgrid_data_input, microgrid_multiplica
     multi = data['transdist_share'].values[0] * microgrid_multiplicator_list[set_number][type_nr]
     ### base voltage is scaled with the root value of the multiplicator for a correct consideration within the voltage rule
     microgrid_data_input['site'].loc[:, 'base-voltage'] *= math.sqrt(multi)
+    microgrid_data_input['site'].loc[:, 'area'] *= multi
     ### scale other relevant quantities
     microgrid_data_input['commodity'].loc[:, 'max':'maxperhour'] *= multi
     microgrid_data_input['process'].loc[:, ['inst-cap', 'cap-lo', 'cap-up', 'cap-block']] *= multi
