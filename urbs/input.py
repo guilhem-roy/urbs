@@ -1,4 +1,5 @@
 import pandas as pd
+import xarray as xr
 import os
 import glob
 from xlrd import XLRDError
@@ -573,9 +574,11 @@ def linopy_model_prep(data, timesteps):
     #     storage.loc[site, storage, commodity][attribute]
     #
 
-    m.parameters['mode'] = identify_mode(data)
-    m.parameters['timesteps'] = timesteps
-    m.parameters['global_prop'] = data['global_prop']
+    m_parameters = dict()
+
+    m_parameters['mode'] = identify_mode(data)
+    m_parameters['timesteps'] = timesteps
+    m_parameters['global_prop'] = data['global_prop']
     commodity = data['commodity']
     process = data['process']
 
@@ -583,38 +586,39 @@ def linopy_model_prep(data, timesteps):
     pro_const_cap = process[process['inst-cap'] == process['cap-up']]
 
     # create list with all support timeframe values
-    m.parameters['stf_list'] = m.global_prop.index.levels[0].tolist()
+    m_parameters['stf_list'] = data['global_prop'].index.levels[0].tolist()
     # creating list wih cost types
-    m.parameters['cost_type_list'] = ['Invest', 'Fixed', 'Variable', 'Fuel', 'Environmental']
+    m_parameters['cost_type_list'] = ['Invest', 'Fixed', 'Variable', 'Fuel', 'Environmental']
 
     # Converting Data frames to dict
     # Data frames that need to be modified will be converted after modification
-    m.parameters['site_dict'] = data['site'].to_dict()
-    m.parameters['demand_dict'] = data['demand'].to_dict()
-    m.parameters['supim_dict'] = data['supim'].to_dict()
+    m_parameters['site_dict'] = data['site'].to_dict()
+    m_parameters['demand_dict'] = data['demand'].to_dict()
+    m_parameters['supim_dict'] = data['supim'].to_dict()
+
 
     # additional features
-    if m.parameters['mode']['tra']:
+    if m_parameters['mode']['tra']:
         transmission = data['transmission'].dropna(axis=0, how='all')
         # create no expansion dataframes
         tra_const_cap = transmission[
             transmission['inst-cap'] == transmission['cap-up']]
 
-    if m.parameters['mode']['sto']:
+    if m_parameters['mode']['sto']:
         storage = data['storage'].dropna(axis=0, how='all')
         # create no expansion dataframes
         sto_const_cap_c = storage[storage['inst-cap-c'] == storage['cap-up-c']]
         sto_const_cap_p = storage[storage['inst-cap-p'] == storage['cap-up-p']]
 
-    if m.parameters['mode']['dsm']:
-        m.parameters['dsm_dict'] = data["dsm"].dropna(axis=0, how='all').to_dict()
-    if m.parameters['mode']['bsp']:
-        m.parameters['buy_sell_price_dict'] = \
+    if m_parameters['mode']['dsm']:
+        m_parameters['dsm_dict'] = data["dsm"].dropna(axis=0, how='all').to_dict()
+    if m_parameters['mode']['bsp']:
+        m_parameters['buy_sell_price_dict'] = \
             data["buy_sell_price"].dropna(axis=0, how='all').to_dict()
         # adding Revenue and Purchase to cost types
-        m.parameters['cost_type_list'].extend(['Revenue', 'Purchase'])
-    if m.parameters['mode']['tve']:
-        m.parameters['eff_factor_dict'] = \
+        m_parameters['cost_type_list'].extend(['Revenue', 'Purchase'])
+    if m_parameters['mode']['tve']:
+        m_parameters['eff_factor_dict'] = \
             data["eff_factor"].dropna(axis=0, how='all').to_dict()
 
     # Create columns of support timeframe values
@@ -622,39 +626,39 @@ def linopy_model_prep(data, timesteps):
                                       get_level_values('support_timeframe'))
     process['support_timeframe'] = (process.index.
                                     get_level_values('support_timeframe'))
-    if m.parameters['mode']['tra']:
+    if m_parameters['mode']['tra']:
         transmission['support_timeframe'] = (transmission.index.
                                              get_level_values
                                              ('support_timeframe'))
-    if m.parameters['mode']['sto']:
+    if m_parameters['mode']['sto']:
         storage['support_timeframe'] = (storage.index.
                                         get_level_values('support_timeframe'))
 
     # installed units for intertemporal planning
-    if m.parameters['mode']['int']:
-        m.parameters['inst_pro'] = process['inst-cap']
-        m.parameters['inst_pro'] = m.inst_pro[m.inst_pro > 0]
-        if m.parameters['mode']['tra']:
-            m.parameters['inst_tra'] = transmission['inst-cap']
-            m.parameters['inst_tra'] =\
-                    m.parameters['inst_tra'][m.parameters['inst_tra'] > 0]
-        if m.parameters['mode']['sto']:
-            m.parameters['inst_sto'] = storage['inst-cap-p']
-            m.parameters['inst_sto'] =\
-                    m.parameters['inst_sto'][m.parameters['inst_sto'] > 0]
+    if m_parameters['mode']['int']:
+        m_parameters['inst_pro'] = process['inst-cap']
+        m_parameters['inst_pro'] = m_parameters['inst_pro'][m_parameters['inst_pro'] > 0]
+        if m_parameters['mode']['tra']:
+            m_parameters['inst_tra'] = transmission['inst-cap']
+            m_parameters['inst_tra'] =\
+                    m_parameters['inst_tra'][m_parameters['inst_tra'] > 0]
+        if m_parameters['mode']['sto']:
+            m_parameters['inst_sto'] = storage['inst-cap-p']
+            m_parameters['inst_sto'] =\
+                    m_parameters['inst_sto'][m_parameters['inst_sto'] > 0]
 
     # process input/output ratios
-    m.parameters['r_in_dict'] = (data['process_commodity']
+    m_parameters['r_in_dict'] = (data['process_commodity']
                                  .xs('In', level='Direction')['ratio']
                                  .to_dict())
-    m.parameters['r_out_dict'] = (data['process_commodity']
+    m_parameters['r_out_dict'] = (data['process_commodity']
                                   .xs('Out', level='Direction')['ratio']
                                   .to_dict())
 
     # process areas
     proc_area = data["process"]['area-per-cap']
     proc_area = proc_area[proc_area >= 0]
-    m.parameters['proc_area_dict'] = proc_area.to_dict()
+    m_parameters['proc_area_dict'] = proc_area.to_dict()
 
     # input ratios for partial efficiencies
     # only keep those entries whose values are
@@ -663,7 +667,7 @@ def linopy_model_prep(data, timesteps):
     r_in_min_fraction = data['process_commodity'].xs('In', level='Direction')
     r_in_min_fraction = r_in_min_fraction['ratio-min']
     r_in_min_fraction = r_in_min_fraction[r_in_min_fraction > 0]
-    m.parameters['r_in_min_fraction_dict'] = r_in_min_fraction.to_dict()
+    m_parameters['r_in_min_fraction_dict'] = r_in_min_fraction.to_dict()
 
     # output ratios for partial efficiencies
     # only keep those entries whose values are
@@ -672,23 +676,23 @@ def linopy_model_prep(data, timesteps):
     r_out_min_fraction = data['process_commodity'].xs('Out', level='Direction')
     r_out_min_fraction = r_out_min_fraction['ratio-min']
     r_out_min_fraction = r_out_min_fraction[r_out_min_fraction > 0]
-    m.parameters['r_out_min_fraction_dict'] = r_out_min_fraction.to_dict()
+    m_parameters['r_out_min_fraction_dict'] = r_out_min_fraction.to_dict()
 
     # storages with fixed initial state
-    if m.parameters['mode']['sto']:
+    if m_parameters['mode']['sto']:
         stor_init_bound = storage['init']
-        m.parameters['stor_init_bound_dict'] = \
+        m_parameters['stor_init_bound_dict'] = \
             stor_init_bound[stor_init_bound >= 0].to_dict()
 
         try:
             # storages with fixed energy-to-power ratio
             sto_ep_ratio = storage['ep-ratio']
-            m.parameters['sto_ep_ratio_dict'] = sto_ep_ratio[sto_ep_ratio >= 0].to_dict()
+            m_parameters['sto_ep_ratio_dict'] = sto_ep_ratio[sto_ep_ratio >= 0].to_dict()
         except KeyError:
-            m.parameters['sto_ep_ratio_dict'] = {}
+            m_parameters['sto_ep_ratio_dict'] = {}
 
     # derive invcost factor from WACC and depreciation duration
-    if m.parameters['mode']['int']:
+    if m_parameters['mode']['int']:
         # modify pro_const_cap for intertemporal mode
         for index in tuple(pro_const_cap.index):
             stf_process = process.xs((index[1], index[2]), level=(1, 2))
@@ -697,12 +701,12 @@ def linopy_model_prep(data, timesteps):
                 pro_const_cap = pro_const_cap.drop(index)
 
         # derive invest factor from WACC, depreciation and discount untility
-        process['discount'] = (m.parameters['global_prop']
+        process['discount'] = (m_parameters['global_prop']
                                 .xs('Discount rate', level=1)
-                                .loc[m.global_prop.index.min()[0]]['value'])
-        process['stf_min'] = m.parameters['global_prop'].index.min()[0]
-        process['stf_end'] = (m.parameters['global_prop'].index.max()[0] +
-                              m.parameters['global_prop'].loc[
+                                .loc[m_parameters['global_prop'].index.min()[0]]['value'])
+        process['stf_min'] = m_parameters['global_prop'].index.min()[0]
+        process['stf_end'] = (m_parameters['global_prop'].index.max()[0] +
+                              m_parameters['global_prop'].loc[
                               (max(commodity.index.get_level_values
                                    ('support_timeframe').unique()),
                                'Weight')]['value'] - 1)
@@ -731,25 +735,25 @@ def linopy_model_prep(data, timesteps):
 
         # Derive multiplier for all energy based costs
         commodity['stf_dist'] = (commodity['support_timeframe'].
-                                 apply(stf_dist, m=m))
+                                 apply(stf_dist, m_parameters=m_parameters))
         commodity['discount-factor'] = (commodity['support_timeframe'].
-                                        apply(discount_factor, m=m))
+                                        apply(discount_factor, m_parameters=m_parameters))
         commodity['eff-distance'] = (commodity['stf_dist'].
-                                     apply(effective_distance, m=m))
+                                     apply(effective_distance, m_parameters=m_parameters))
         commodity['cost_factor'] = (commodity['discount-factor'] *
                                     commodity['eff-distance'])
         process['stf_dist'] = (process['support_timeframe'].
-                               apply(stf_dist, m=m))
+                               apply(stf_dist, m_parameters=m_parameters))
         process['discount-factor'] = (process['support_timeframe'].
-                                      apply(discount_factor, m=m))
+                                      apply(discount_factor, m_parameters=m_parameters))
         process['eff-distance'] = (process['stf_dist'].
-                                   apply(effective_distance, m=m))
+                                   apply(effective_distance, m_parameters=m_parameters))
         process['cost_factor'] = (process['discount-factor'] *
                                   process['eff-distance'])
 
         # Additional features
         # transmission mode
-        if m.parameters['mode']['tra']:
+        if m_parameters['mode']['tra']:
             # modify tra_const_cap for intertemporal mode
             for index in tuple(tra_const_cap.index):
                 stf_transmission = transmission.xs((index[1], index[2], index[3], index[4]),
@@ -760,11 +764,11 @@ def linopy_model_prep(data, timesteps):
             # derive invest factor from WACC, depreciation and
             # discount untility
             transmission['discount'] = (
-                m.parameters['global_prop'].xs('Discount rate', level=1)
-                .loc[m.parameters['global_prop'].index.min()[0]]['value'])
-            transmission['stf_min'] = m.parameters['global_prop'].index.min()[0]
-            transmission['stf_end'] = (m.parameters['global_prop'].index.max()[0] +
-                                       m.parameters['global_prop'].loc[
+                m_parameters['global_prop'].xs('Discount rate', level=1)
+                .loc[m_parameters['global_prop'].index.min()[0]]['value'])
+            transmission['stf_min'] = m_parameters['global_prop'].index.min()[0]
+            transmission['stf_end'] = (m_parameters['global_prop'].index.max()[0] +
+                                       m_parameters['global_prop'].loc[
                                        (max(commodity.index.get_level_values
                                             ('support_timeframe').unique()),
                                         'Weight')]['value'] - 1)
@@ -792,15 +796,15 @@ def linopy_model_prep(data, timesteps):
                              (transmission['overpay-factor'].isnull()),
                              'overpay-factor'] = 0
             transmission['stf_dist'] = (transmission['support_timeframe'].
-                                        apply(stf_dist, m=m))
+                                        apply(stf_dist, m_parameters=m_parameters))
             transmission['discount-factor'] = (
-                transmission['support_timeframe'].apply(discount_factor, m=m))
+                transmission['support_timeframe'].apply(discount_factor, m_parameters=m_parameters))
             transmission['eff-distance'] = (transmission['stf_dist'].
-                                            apply(effective_distance, m=m))
+                                            apply(effective_distance, m_parameters=m_parameters))
             transmission['cost_factor'] = (transmission['discount-factor'] *
                                            transmission['eff-distance'])
         # storage mode
-        if m.parameters['mode']['sto']:
+        if m_parameters['mode']['sto']:
             # modify sto_const_cap_c and sto_const_cap_p for intertemporal mode
             for index in tuple(sto_const_cap_c.index):
                 stf_storage = storage.xs((index[1], index[2], index[3]), level=(1, 2, 3))
@@ -816,11 +820,11 @@ def linopy_model_prep(data, timesteps):
 
             # derive invest factor from WACC, depreciation and
             # discount untility
-            storage['discount'] = m.parameters['global_prop'].xs('Discount rate', level=1) \
-                                   .loc[m.global_prop.index.min()[0]]['value']
-            storage['stf_min'] = m.parameters['global_prop'].index.min()[0]
-            storage['stf_end'] = (m.parameters['global_prop'].index.max()[0] +
-                                  m.parameters['global_prop'].loc[
+            storage['discount'] = m_parameters['global_prop'].xs('Discount rate', level=1) \
+                                   .loc[m_parameters['global_prop'].index.min()[0]]['value']
+            storage['stf_min'] = m_parameters['global_prop'].index.min()[0]
+            storage['stf_end'] = (m_parameters['global_prop'].index.max()[0] +
+                                  m_parameters['global_prop'].loc[
                                   (max(commodity.index.get_level_values
                                        ('support_timeframe').unique()),
                                    'Weight')]['value'] - 1)
@@ -848,11 +852,11 @@ def linopy_model_prep(data, timesteps):
                         'overpay-factor'] = 0
 
             storage['stf_dist'] = (storage['support_timeframe']
-                                   .apply(stf_dist, m=m))
+                                   .apply(stf_dist, m_parameters=m_parameters))
             storage['discount-factor'] = (storage['support_timeframe']
-                                          .apply(discount_factor, m=m))
+                                          .apply(discount_factor, m_parameters=m_parameters))
             storage['eff-distance'] = (storage['stf_dist']
-                                       .apply(effective_distance, m=m))
+                                       .apply(effective_distance, m_parameters=m_parameters))
             storage['cost_factor'] = (storage['discount-factor'] *
                                       storage['eff-distance'])
     else:
@@ -869,14 +873,14 @@ def linopy_model_prep(data, timesteps):
         process['cost_factor'] = 1
 
         # additional features
-        if m.parameters['mode']['tra']:
+        if m_parameters['mode']['tra']:
             transmission['invcost-factor'] = (
                 transmission.apply(lambda x:
                                    invcost_factor(x['depreciation'],
                                                   x['wacc']),
                                    axis=1))
             transmission['cost_factor'] = 1
-        if m.parameters['mode']['sto']:
+        if m_parameters['mode']['sto']:
             storage['invcost-factor'] = (
                 storage.apply(lambda x:
                               invcost_factor(x['depreciation'],
@@ -885,50 +889,50 @@ def linopy_model_prep(data, timesteps):
             storage['cost_factor'] = 1
 
     # Converting Data frames to dictionaries
-    m.parameters['global_prop_dict'] = m.parameters['global_prop'].to_dict()
-    m.parameters['commodity_dict'] = commodity.to_dict()
-    m.parameters['process_dict'] = process.to_dict()
+    m_parameters['global_prop_dict'] = m_parameters['global_prop'].to_dict()
+    m_parameters['commodity_dict'] = commodity.to_dict()
+    m_parameters['process_dict'] = process.to_dict()
 
     # dictionaries for additional features
-    if m.parameters['mode']['tra']:
-        m.parameters['transmission_dict'] = transmission.to_dict()
+    if m_parameters['mode']['tra']:
+        m_parameters['transmission_dict'] = transmission.to_dict()
         # DCPF transmission lines are bidirectional and do not have symmetry
         # fix-cost and inv-cost should be multiplied by 2
-        if m.parameters['mode']['dpf']:
+        if m_parameters['mode']['dpf']:
             transmission_dc = transmission[transmission['reactance'] > 0]
-            m.parameters['transmission_dc_dict'] = transmission_dc.to_dict()
-            for t in m.transmission_dc_dict['reactance']:
-                m.parameters['transmission_dict']['inv-cost'][t] =\
-                        2 * m.parameters['transmission_dict']['inv-cost'][t]
-                m.parameters['transmission_dict']['fix-cost'][t] =\
-                        2 * m.parameters['transmission_dict']['fix-cost'][t]
+            m_parameters['transmission_dc_dict'] = transmission_dc.to_dict()
+            for t in m_parameters['transmission_dc_dict']['reactance']:
+                m_parameters['transmission_dict']['inv-cost'][t] =\
+                        2 * m_parameters['transmission_dict']['inv-cost'][t]
+                m_parameters['transmission_dict']['fix-cost'][t] =\
+                        2 * m_parameters['transmission_dict']['fix-cost'][t]
 
-    if m.parameters['mode']['sto']:
-        m.parameters['storage_dict'] = storage.to_dict()
+    if m_parameters['mode']['sto']:
+        m_parameters['storage_dict'] = storage.to_dict()
 
-    # update m.mode['exp'] and write dictionaries with constant capacities
-    m.parameters['mode']['exp']['pro'] = identify_expansion(
+    # update m_parameters['mode']['exp'] and write dictionaries with constant capacities
+    m_parameters['mode']['exp']['pro'] = identify_expansion(
                                             pro_const_cap['inst-cap'],
                                             process['inst-cap'].dropna())
-    m.parameters['pro_const_cap_dict'] = pro_const_cap['inst-cap'].to_dict()
+    m_parameters['pro_const_cap_dict'] = pro_const_cap['inst-cap'].to_dict()
 
-    if m.parameters['mode']['tra']:
-        m.parameters['mode']['exp']['tra'] = identify_expansion(
+    if m_parameters['mode']['tra']:
+        m_parameters['mode']['exp']['tra'] = identify_expansion(
             tra_const_cap['inst-cap'],
             transmission['inst-cap'].dropna())
-        m.parameters['tra_const_cap_dict'] = tra_const_cap['inst-cap'].to_dict()
+        m_parameters['tra_const_cap_dict'] = tra_const_cap['inst-cap'].to_dict()
 
-    if m.parameters['mode']['sto']:
-        m.parameters['mode']['exp']['sto-c'] = identify_expansion(
+    if m_parameters['mode']['sto']:
+        m_parameters['mode']['exp']['sto-c'] = identify_expansion(
             sto_const_cap_c['inst-cap-c'], storage['inst-cap-c'].dropna())
-        m.parameters['sto_const_cap_c_dict'] = (sto_const_cap_c['inst-cap-c']
+        m_parameters['sto_const_cap_c_dict'] = (sto_const_cap_c['inst-cap-c']
                                                 .to_dict())
-        m.parameters['mode']['exp']['sto-p'] = identify_expansion(
+        m_parameters['mode']['exp']['sto-p'] = identify_expansion(
             sto_const_cap_c['inst-cap-p'], storage['inst-cap-p'].dropna())
-        m.parameters['sto_const_cap_p_dict'] = (sto_const_cap_p['inst-cap-p']
+        m_parameters['sto_const_cap_p_dict'] = (sto_const_cap_p['inst-cap-p']
                                                 .to_dict())
 
-    return m
+    return m, m_parameters
 
 
 def split_columns(columns, sep='.'):

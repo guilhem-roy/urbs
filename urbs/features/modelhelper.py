@@ -75,36 +75,36 @@ def overpay_factor(dep_prd, interest, discount, year_built, stf_min, stf_end):
 
 
 # Energy related costs
-def stf_dist(stf, m):
+def stf_dist(stf, m_parameters):
     """Calculates the distance between the modeled support timeframes.
     """
-    sorted_stf = sorted(m.stf_list)
+    sorted_stf = sorted(m_parameters['stf_list'])
     dist = []
 
     for s in sorted_stf:
         if s == max(sorted_stf):
-            dist.append(m.global_prop.loc[(s, 'Weight')]['value'])
+            dist.append(m_parameters['global_prop'].loc[(s, 'Weight')]['value'])
         else:
             dist.append(sorted_stf[sorted_stf.index(s) + 1] - s)
 
     return dist[sorted_stf.index(stf)]
 
 
-def discount_factor(stf, m):
+def discount_factor(stf, m_parameters):
     """Discount for any payment made in the year stf
     """
-    discount = (m.global_prop.xs('Discount rate', level=1)
-                .loc[m.global_prop.index.min()[0]]['value'])
+    discount = (m_parameters['global_prop'].xs('Discount rate', level=1)
+                .loc[m_parameters['global_prop'].index.min()[0]]['value'])
 
-    return (1 + discount) ** (1 - (stf - m.global_prop.index.min()[0]))
+    return (1 + discount) ** (1 - (stf - m_parameters['global_prop'].index.min()[0]))
 
 
-def effective_distance(dist, m):
+def effective_distance(dist, m_parameters):
     """Factor for variable, fuel, purchase, sell, and fix costs.
     Calculated by repetition of modeled stfs and discount utility.
     """
-    discount = (m.global_prop.xs('Discount rate', level=1)
-                .loc[m.global_prop.index.min()[0]]['value'])
+    discount = (m_parameters['global_prop'].xs('Discount rate', level=1)
+                .loc[m_parameters['global_prop'].index.min()[0]]['value'])
 
     if discount == 0:
         return dist
@@ -112,7 +112,7 @@ def effective_distance(dist, m):
         return (1 - (1 + discount) ** (-dist)) / discount
 
 
-def commodity_balance(m, tm, stf, sit, com):
+def commodity_balance(m, m_parameters, tm, stf, sit, com):
     """Calculate commodity balance at given timestep.
     For a given commodity co and timestep tm, calculate the balance of
     consumed (to process/storage/transmission, counts positive) and provided
@@ -121,26 +121,28 @@ def commodity_balance(m, tm, stf, sit, com):
     commodities.
     Args:
         m: the model object
+        m_parameters: the parameters of the model
         tm: the timestep
-        site: the site
+        stf: the support time frame
+        sit: the site
         com: the commodity
     Returns
         balance: net value of consumed (positive) or provided (negative) power
     """
-    balance = (sum(m.e_pro_in[(tm, stframe, site, process, com)]
+    balance = (sum(m.variables['e_pro_in'][:(tm, stframe, site, process, com)]
                    # usage as input for process increases balance
-                   for stframe, site, process in m.pro_tuples
+                   for stframe, site, process in m_parameters['pro_tuples']
                    if site == sit and stframe == stf and
-                   (stframe, process, com) in m.r_in_dict) -
-               sum(m.e_pro_out[(tm, stframe, site, process, com)]
+                   (stframe, process, com) in m_parameters['r_in_dict']) -
+               sum(m.variables['e_pro_out'][:(tm, stframe, site, process, com)]
                    # output from processes decreases balance
-                   for stframe, site, process in m.pro_tuples
+                   for stframe, site, process in m_parameters['pro_tuples']
                    if site == sit and stframe == stf and
-                   (stframe, process, com) in m.r_out_dict))
-    if m.mode['tra']:
-        balance += transmission_balance(m, tm, stf, sit, com)
-    if m.mode['sto']:
-        balance += storage_balance(m, tm, stf, sit, com)
+                   (stframe, process, com) in m_parameters['r_out_dict']))
+    if m_parameters['mode']['tra']:
+        balance += transmission_balance(m, m_parameters, tm, stf, sit, com)
+    if m_parameters['mode']['sto']:
+        balance += storage_balance(m, m_parameters, tm, stf, sit, com)
 
     return balance
 
@@ -164,25 +166,26 @@ def commodity_subset(com_tuples, type_name):
                    in com_tuples if com in type_name)
 
 
-def op_pro_tuples(pro_tuple, m):
+def op_pro_tuples(pro_tuple, m_parameters):
     """ Tuples for operational status of units (processes, transmissions,
     storages) for intertemporal planning.
     Only such tuples where the unit is still operational until the next
     support time frame are valid.
     """
     op_pro = []
-    sorted_stf = sorted(list(m.stf))
+    sorted_stf = sorted(list(m_parameters['stf']))
 
     for (stf, sit, pro) in pro_tuple:
         for stf_later in sorted_stf:
             index_helper = sorted_stf.index(stf_later)
             if stf_later == max(sorted_stf):
                 if (stf_later +
-                    m.global_prop.loc[(max(sorted_stf), 'Weight'), 'value'] -
-                    1 <= stf + m.process_dict['depreciation'][
+                    m_parameters['global_prop'].loc[(max(sorted_stf), 'Weight'), 'value'] -
+                    1 <= stf + m_parameters['process_dict']['depreciation'][
                                               (stf, sit, pro)]):
                     op_pro.append((sit, pro, stf, stf_later))
-            elif ((stf_later + sorted_stf[index_helper + 1])/2 <= stf + m.process_dict['depreciation'][(stf, sit, pro)]
+            elif ((stf_later + sorted_stf[index_helper + 1])/2 
+                  <= stf + m_parameters['process_dict']['depreciation'][(stf, sit, pro)]
                   and stf <= stf_later):
                 op_pro.append((sit, pro, stf, stf_later))
             else:
@@ -191,26 +194,28 @@ def op_pro_tuples(pro_tuple, m):
     return op_pro
 
 
-def inst_pro_tuples(m):
+def inst_pro_tuples(m_parameters):
     """ Tuples for operational status of already installed units
     (processes, transmissions, storages) for intertemporal planning.
     Only such tuples where the unit is still operational until the next
     support time frame are valid.
     """
     inst_pro = []
-    sorted_stf = sorted(list(m.stf))
+    sorted_stf = sorted(list(m_parameters['stf']))
 
-    for (stf, sit, pro) in m.inst_pro.index:
+    for (stf, sit, pro) in m_parameters['inst_pro'].index:
         for stf_later in sorted_stf:
             index_helper = sorted_stf.index(stf_later)
-            if stf_later == max(m.stf):
+            if stf_later == max(m_parameters['stf']):
                 if (stf_later +
-                   m.global_prop.loc[(max(sorted_stf), 'Weight'), 'value'] -
-                   1 < min(m.stf) + m.process_dict['lifetime'][
-                                                   (stf, sit, pro)]):
+                   m_parameters['global_prop'].loc[(max(sorted_stf), 'Weight'), 'value'] -
+                   1 < min(m_parameters['stf']) 
+                   + m_parameters['process_dict']['lifetime'][
+                                                      (stf, sit, pro)]):
                     inst_pro.append((sit, pro, stf_later))
-            elif (stf_later + sorted_stf[index_helper + 1])/2 <= (min(m.stf)
-                                                                  + m.process_dict['lifetime'][(stf, sit, pro)]):
+            elif ((stf_later + sorted_stf[index_helper + 1])/2 
+                  <= (min(m_parameters['stf'])
+                  + m_parameters['process_dict']['lifetime'][(stf, sit, pro)])):
                 inst_pro.append((sit, pro, stf_later))
 
     return inst_pro
