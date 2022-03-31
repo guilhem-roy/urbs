@@ -69,11 +69,11 @@ def create_model(data, dt=1, timesteps=None, objective='cost',
     # TODO: Check that the types are suitable (some lists should maybe be sets ?)
 
     # generate ordered time step sets
-    m_parameters['t'] = m_parameters['timesteps']
+    m_parameters['t'] = pd.Index(m_parameters['timesteps'], name='t')
     # doc='Set of timesteps'
 
     # modelled (i.e. excluding init time step for storage) time steps
-    m_parameters['tm'] = m_parameters['timesteps'][1:]
+    m_parameters['tm'] = pd.Index(m_parameters['timesteps'][1:], name='tm')
     # within=m.t,
     # doc='Set of modelled timesteps'
 
@@ -230,7 +230,7 @@ def create_model(data, dt=1, timesteps=None, objective='cost',
 
     # A variable that equals 1. 
     # This is a hack to have linopy.LinearExpressions with constants in version
-    # 0.0.8
+    # 0.0.9 of linopy
     m.add_variables(coords=[], name="1")
 
     # costs
@@ -253,15 +253,18 @@ def create_model(data, dt=1, timesteps=None, objective='cost',
 
     # process capacity as expression object
     # (variable if expansion is possible, else static)
-    # TODO : To improve performance, replace the loop over index tuples
-    # with operations on arrays
     # m.cap_pro = pyomo.Expression(
     #     m.pro_tuples,
     #     rule=def_process_capacity_rule,
     #     doc='Total process capacity (MW)')
 
-    m_parameters['cap_pro'] = {
-            (stf, sit, pro):def_process_capacity_rule(m,m_parameters,stf,sit,pro) 
+    # TODO : Express cap_pro as a single linearExpression instead of a dict
+    # of linearExpressions.
+    # - Either use some function to merge the linear expressions
+    # - Or express cap_pro as product and sum of arrays and variables, so that
+    # the computation can be done at once for all index tuples.
+    m_parameters['cap_pro'] = {(stf, sit, pro):
+            def_process_capacity_rule(m,m_parameters,stf,sit,pro) 
             for (stf,sit,pro) in m_parameters['pro_tuples']}
 
     m.add_variables(lower=0,
@@ -575,7 +578,7 @@ def def_process_capacity_rule(m, m_parameters, stf, sit, pro):
                            * m.variables["1"])
             else:
                 cap_pro = (sum(m.variables['cap_pro_new']
-                                .loc[[(stf_built, sit, pro)]]
+                                .loc[(stf_built, sit, pro),]
                                for stf_built in m.stf
                                if (sit, pro, stf_built, stf)
                                in m_parameters['operational_pro_tuples'])
@@ -584,17 +587,17 @@ def def_process_capacity_rule(m, m_parameters, stf, sit, pro):
                                       [(min(m_parameters['stf']), sit, pro)]
                             * m.variables["1"])
         else:
-            cap_pro = sum(m.variables['cap_pro_new'].loc[[(stf_built, sit, pro)]]
+            cap_pro = sum(m.variables['cap_pro_new'].loc[(stf_built, sit, pro),]
                 for stf_built in m_parameters['stf']
                 if (sit, pro, stf_built, stf)
                 in m_parameters['operational_pro_tuples'])
     else:
         if (sit, pro, stf) in m_parameters['pro_const_cap_dict']:
             cap_pro = (
-                    m_parameters['process_dict']['inst-cap'][[(stf, sit, pro)]]
+                    m_parameters['process_dict']['inst-cap'][(stf, sit, pro)]
                     * m.variables["1"])
         else:
-            cap_pro = (m.variables['cap_pro_new'].loc[[(stf, sit, pro)]] +
+            cap_pro = (m.variables['cap_pro_new'].loc[(stf, sit, pro),] +
                        + m_parameters['process_dict']
                                      ['inst-cap']
                                      [(stf, sit, pro)]

@@ -117,13 +117,11 @@ def add_transmission(m, m_parameters):
         #     rule=res_transmission_capacity_rule,
         #     doc='transmission.cap-lo <= total transmission capacity <= '
         #         'transmission.cap-up')
-    # TODO : Find a way to express the symmetry condition.
-    # Ideas : 
-    #   - Add one constraint for each tuple
-    #   - Find a way to exchange sin and sout coordinates using 
-    #   a linear expression (Some sort of transposition, is it considered a
-    #   linear expression by linopy?). There is a method transpose() that 
-    #   returns a variable with transposed coordinates
+    # TODO: Find a way to exchange sin and sout coordinates using a linear
+    # expression (Some sort of transposition, is it considered a linear
+    # expression by linopy?). There is a method transpose() that returns a
+    # variable with transposed coordinates. That would require the tuples to be
+    # considered as multiple dimensions.a That pose other problems, though.
     for (stf, sin, sout, tra, com) in m_parameters['tra_tuples']:
         m.add_constraints(
             m_parameters['cap_tra'][stf, sin, sout, tra, com] -
