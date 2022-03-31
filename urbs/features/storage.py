@@ -124,15 +124,14 @@ def add_storage(m, m_parameters):
     # storage rules
     m.add_constraints(m.variables['e_sto_con'][1:,] -
         m.variables['e_sto_con'].shift({"t":1})[1:,] *
-        xr.DataArray.from_series(pd.Series({t:
-            (1 - m_parameters['storage_dict']['discharge'] [t]) **
+        xr.DataArray.from_series(pd.Series({s:
+            (1 - m_parameters['storage_dict']['discharge'] [s]) **
             m_parameters['dt']
-            for t in m_parameters['sto_tuples']}, name="sto_tuples")) -
+            for s in m_parameters['sto_tuples']}, name="sto_tuples")) -
         m.variables['e_sto_in'][1:,] *
         xr.DataArray.from_series(pd.Series(m_parameters['storage_dict']['eff-in'], name="sto_tuples")) +
         m.variables['e_sto_out'][1:,] *
-        xr.DataArray.from_series(pd.Series({t: 1/m_parameters['storage_dict']['eff-out'][t]
-            for t in m_parameters['sto_tuples']}, name="sto_tuples")),
+        xr.DataArray.from_series(1/pd.Series(m_parameters['storage_dict']['eff-out'], name="sto_tuples")),
         "=", 0,
         name="def_storage_state")
     # m.def_storage_state = pyomo.Constraint(
@@ -181,8 +180,8 @@ def add_storage(m, m_parameters):
         #     m.sto_tuples,
         #     rule=res_storage_capacity_rule,
         #     doc='storage.cap-lo-c <= storage capacity <= storage.cap-up-c')
-        m.add_constraints(m.variables['e_sto_con'].loc[:,(stf, sit, sto, com)][1,] -
-                m.variables['e_sto_con'].loc[:,(stf, sit, sto, com)][-1,].rename({"t":"t1"}), "<=",
+        m.add_constraints(m.variables['e_sto_con'].loc[:,(stf, sit, sto, com)][1,].reset_coords(drop=True) -
+                m.variables['e_sto_con'].loc[:,(stf, sit, sto, com)][-1,].reset_coords(drop=True), "<=",
                 0, name="res_storage_state_cyclicity"+str((stf, sit, sto, com)))
         # m.res_storage_state_cyclicity = pyomo.Constraint(
         #     m.sto_tuples,

@@ -577,27 +577,27 @@ def def_process_capacity_rule(m, m_parameters, stf, sit, pro):
                                        [stf, sit, pro]
                            * m.variables["1"])
             else:
-                cap_pro = (sum(m.variables['cap_pro_new']
-                                .loc[(stf_built, sit, pro),]
+                cap_pro = (m.variables['cap_pro_new']
+                                .loc[[(stf_built, sit, pro)
                                for stf_built in m.stf
                                if (sit, pro, stf_built, stf)
-                               in m_parameters['operational_pro_tuples'])
+                               in m_parameters['operational_pro_tuples']]].sum()
                             + m_parameters['process_dict']
                                       ['inst-cap']
                                       [(min(m_parameters['stf']), sit, pro)]
                             * m.variables["1"])
         else:
-            cap_pro = sum(m.variables['cap_pro_new'].loc[(stf_built, sit, pro),]
+            cap_pro = m.variables['cap_pro_new'].loc[[(stf_built, sit, pro)
                 for stf_built in m_parameters['stf']
                 if (sit, pro, stf_built, stf)
-                in m_parameters['operational_pro_tuples'])
+                in m_parameters['operational_pro_tuples']]].sum()
     else:
         if (sit, pro, stf) in m_parameters['pro_const_cap_dict']:
             cap_pro = (
                     m_parameters['process_dict']['inst-cap'][(stf, sit, pro)]
                     * m.variables["1"])
         else:
-            cap_pro = (m.variables['cap_pro_new'].loc[(stf, sit, pro),] +
+            cap_pro = (m.variables['cap_pro_new'].loc[(stf, sit, pro),].reset_coords(drop=True) +
                        + m_parameters['process_dict']
                                      ['inst-cap']
                                      [(stf, sit, pro)]

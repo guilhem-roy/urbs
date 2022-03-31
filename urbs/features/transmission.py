@@ -1,7 +1,6 @@
 import math
 import pyomo.core as pyomo
 import pandas as pd
-import xarray as xr
 import linopy
 
 def e_tra_domain_rule(m_parameters, tm, stf, sin, sout, tra, com):
@@ -86,7 +85,7 @@ def add_transmission(m, m_parameters):
     m.add_constraints(
             m.variables['e_tra_out'] - 
             m.variables['e_tra_in'] *
-            xr.DataArray.from_series(pd.Series(m_parameters['transmission_dict']['eff'], name="tra_tuples")) == 0,
+            pd.Series(m_parameters['transmission_dict']['eff'], name="tra_tuples") == 0,
             name="def_transmission_output")
     # m.def_transmission_output = pyomo.Constraint(
     #     m.tm, m.tra_tuples,
@@ -268,7 +267,7 @@ def add_transmission_dc(m, m_parameters):
     m.add_constraints(
             m.variables['e_tra_out'] -
             m.variables['e_tra_in'] *
-            xr.DataArray.from_series(pd.Series(m_parameters['transmission_dict']['eff'], name="tra_tuples")) == 0,
+            pd.Series(m_parameters['transmission_dict']['eff'], name="tra_tuples") == 0,
             name="def_transmission_output")
     # m.def_transmission_output = pyomo.Constraint(
     #     m.tm, m.tra_tuples,

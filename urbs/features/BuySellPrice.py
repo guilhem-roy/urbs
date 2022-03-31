@@ -1,52 +1,101 @@
 import math
 import pyomo.core as pyomo
+import pandas as pd
 from .modelhelper import commodity_subset
 
 
-def add_buy_sell_price(m):
+def add_buy_sell_price(m, m_parameters):
 
     # Sets
-    m.com_sell = pyomo.Set(
-        within=m.com,
-        initialize=commodity_subset(m.com_tuples, 'Sell'),
-        doc='Commodities that can be sold')
-    m.com_buy = pyomo.Set(
-        within=m.com,
-        initialize=commodity_subset(m.com_tuples, 'Buy'),
-        doc='Commodities that can be purchased')
+    m_parameters['com_sell'] = pd.Index(commodity_subset(m_parameters['com_tuples'], 'Sell'),
+            name="com_sell")
+    # m.com_sell = pyomo.Set(
+    #     within=m.com,
+    #     initialize=commodity_subset(m.com_tuples, 'Sell'),
+    #     doc='Commodities that can be sold')
+    m_parameters['com_buy'] = pd.Index(commodity_subset(m_parameters['com_tuples'], 'Buy'),
+            name="com_buy")
+    # m.com_buy = pyomo.Set(
+    #     within=m.com,
+    #     initialize=commodity_subset(m.com_tuples, 'Buy'),
+    #     doc='Commodities that can be purchased')
 
     # Variables
-    m.e_co_sell = pyomo.Var(
-        m.tm, m.com_tuples,
-        within=pyomo.NonNegativeReals,
-        doc='Use of sell commodity source (MW) per timestep')
-    m.e_co_buy = pyomo.Var(
-        m.tm, m.com_tuples,
-        within=pyomo.NonNegativeReals,
-        doc='Use of buy commodity source (MW) per timestep')
+    m.add_variables(name="e_co_sell", coords=[m_parameters['tm'],
+        m_parameters['com_tuples']], lower=0)
+    # m.e_co_sell = pyomo.Var(
+    #     m.tm, m.com_tuples,
+    #     within=pyomo.NonNegativeReals,
+    #     doc='Use of sell commodity source (MW) per timestep')
+    m.add_variables(name="e_co_buy", coords=[m_parameters['tm'],
+        m_parameters['com_tuples']], lower=0)
+    # m.e_co_buy = pyomo.Var(
+    #     m.tm, m.com_tuples,
+    #     within=pyomo.NonNegativeReals,
+    #     doc='Use of buy commodity source (MW) per timestep')
 
     # Rules
-    m.res_sell_step = pyomo.Constraint(
-        m.tm, m.com_tuples,
-        rule=res_sell_step_rule,
-        doc='sell commodity output per step <= commodity.maxperstep')
-    m.res_sell_total = pyomo.Constraint(
-        m.com_tuples,
-        rule=res_sell_total_rule,
-        doc='total sell commodity output <= commodity.max')
-    m.res_buy_step = pyomo.Constraint(
-        m.tm, m.com_tuples,
-        rule=res_buy_step_rule,
-        doc='buy commodity output per step <= commodity.maxperstep')
-    m.res_buy_total = pyomo.Constraint(
-        m.com_tuples,
-        rule=res_buy_total_rule,
-        doc='total buy commodity output <= commodity.max')
+    for (stf, sit, com, com_type) in m_parameters['com_tuples']:
+        if com in m_parameters['com_sell']:
+            m.add_constraints(m.variables['e_co_sell'].loc[:,(stf, sit, com, com_type)]
+                    .reset_coords(drop=True),
+                    "<=", m_parameters['dt'] *
+                    m_parameters['commodity_dict']['maxperhour']
+                    [(stf, sit, com, com_type)],
+                    name="res_sell_step"+str((stf, sit, com, com_type)))
+            # m.res_sell_step = pyomo.Constraint(
+            #     m.tm, m.com_tuples,
+            #     rule=res_sell_step_rule,
+            #     doc='sell commodity output per step <= commodity.maxperstep')
 
-    m.res_sell_buy_symmetry = pyomo.Constraint(
-        m.pro_input_tuples,
-        rule=res_sell_buy_symmetry_rule,
-        doc='power connection capacity must be symmetric in both directions')
+            # calculate total sale of commodity com
+            total_consumption = m.variables['e_co_sell'].loc[:,(stf,sit,com,com_type)].sum()
+            total_consumption *= m_parameters['weight']
+            m.add_constraints(total_consumption, "<=",
+                    m_parameters['commodity_dict']['max']
+                    [(stf, sit, com, com_type)],
+                    name="res_sell_total"+str((stf, sit, com, com_type)))
+            # m.res_sell_total = pyomo.Constraint(
+            #     m.com_tuples,
+            #     rule=res_sell_total_rule,
+            #     doc='total sell commodity output <= commodity.max')
+
+        if com in m_parameters['com_buy']:
+            m.add_constraints(m.variables['e_co_buy'].loc[:,(stf, sit, com, com_type)]
+                    .reset_coords(drop=True),
+                    "<=", m_parameters['dt'] *
+                    m_parameters['commodity_dict']['maxperhour']
+                    [(stf, sit, com, com_type)],
+                    name="res_buy_step"+str((stf, sit, com, com_type)))
+            # m.res_buy_step = pyomo.Constraint(
+            #     m.tm, m.com_tuples,
+            #     rule=res_buy_step_rule,
+            #     doc='buy commodity output per step <= commodity.maxperstep')
+            # calculate total sale of commodity com
+            total_consumption = m.variables['e_co_buy'].loc[:,(stf,sit,com,com_type)].sum()
+            total_consumption *= m_parameters['weight']
+            m.add_constraints(total_consumption, "<=",
+                    m_parameters['commodity_dict']['max']
+                    [(stf, sit, com, com_type)],
+                    name="res_sell_total"+str((stf, sit, com, com_type)))
+            # m.res_buy_total = pyomo.Constraint(
+            #     m.com_tuples,
+            #     rule=res_buy_total_rule,
+            #     doc='total buy commodity output <= commodity.max')
+
+    for (stf, sit_in, pro_in, coin) in m_parameters['pro_input_tuples']:
+        if coin in m_parameters['com_buy']:
+            sell_pro = search_sell_buy_tuple(m_parameters, stf, sit_in, pro_in, coin)
+            if sell_pro is None:
+                continue
+            else:
+                m.add_constraints(m_parameters['cap_pro'][stf, sit_in, pro_in] -
+                        m_parameters['cap_pro'][stf, sit_in, sell_pro], "=", 0,
+                        name="res_sell_buy_symmetry"+str((stf, sit_in, sell_pro)))
+        # m.res_sell_buy_symmetry = pyomo.Constraint(
+        #     m.pro_input_tuples,
+        #     rule=res_sell_buy_symmetry_rule,
+        #     doc='power connection capacity must be symmetric in both directions')
 
     return m
 
@@ -120,18 +169,18 @@ def res_sell_buy_symmetry_rule(m, stf, sit_in, pro_in, coin):
         return pyomo.Constraint.Skip
 
 
-def search_sell_buy_tuple(m, stf, sit_in, pro_in, coin):
+def search_sell_buy_tuple(m_parameters, stf, sit_in, pro_in, coin):
     """ Return the equivalent sell-process for a given buy-process.
     Args:
-        m: a Pyomo ConcreteModel m
+        m: the parameters of the model
         sit_in: a site
         pro_in: a process
         co_in: a commodity
     Returns:
         a process
     """
-    pro_output_tuples = [x for x in list(m.pro_output_tuples.value) if x[1] == sit_in]
-    pro_input_tuples = [x for x in list(m.pro_input_tuples.value) if x[1] == sit_in]
+    pro_output_tuples = [x for x in m_parameters['pro_output_tuples'] if x[1] == sit_in]
+    pro_input_tuples = [x for x in m_parameters['pro_input_tuples'] if x[1] == sit_in]
     # search the output commodities for the "buy" process
     # buy_out = (stf, site, output_commodity)
     buy_out = set([(x[0], x[1], x[3])
@@ -140,7 +189,7 @@ def search_sell_buy_tuple(m, stf, sit_in, pro_in, coin):
     # search the sell process for the output_commodity from the buy process
     sell_output_tuple = ([x
                           for x in pro_output_tuples
-                          if x[3] in m.com_sell])
+                          if x[3] in m_parameters['com_sell']])
     for k in range(len(sell_output_tuple)):
         sell_pro = sell_output_tuple[k][2]
         sell_in = set([(x[0], x[1], x[3])
