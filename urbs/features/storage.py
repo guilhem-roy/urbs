@@ -235,14 +235,14 @@ def def_storage_capacity_rule(m, m_parameters, stf, sit, sto, com):
                     m.variables['1'])
             else:
                 cap_sto_c = (
-                    sum(m.variables['cap_sto_c_new'].loc[(stf_built, sit, sto, com),]
+                    sum(m.variables['cap_sto_c_new'].loc[(stf_built, sit, sto, com),].reset_coords(drop=True)
                         for stf_built in m.stf
                         if (sit, sto, com, stf_built, stf) in
                         m.operational_sto_tuples) +
                     m.storage_dict['inst-cap-c'][(min(m_parameters['stf']), sit, sto, com)])
         else:
             cap_sto_c = (
-                sum(m.variables['cap_sto_c_new'].loc[(stf_built, sit, sto, com),]
+                sum(m.variables['cap_sto_c_new'].loc[(stf_built, sit, sto, com),].reset_coords(drop=True)
                     for stf_built in m.stf
                     if (sit, sto, com, stf_built, stf) in
                     m_parameters['operational_sto_tuples']))
@@ -253,7 +253,7 @@ def def_storage_capacity_rule(m, m_parameters, stf, sit, sto, com):
                         (stf, sit, sto, com)] *
                     m.variables['1'])
         else:
-            cap_sto_c = (m.variables['cap_sto_c_new'].loc[(stf, sit, sto, com),] +
+            cap_sto_c = (m.variables['cap_sto_c_new'].loc[(stf, sit, sto, com),].reset_coords(drop=True) +
                          m_parameters['storage_dict']['inst-cap-c'][(stf, sit, sto, com)] *
                          m.variables['1'])
 
@@ -270,7 +270,7 @@ def def_storage_power_rule(m, m_parameters, stf, sit, sto, com):
                     m.variables['1'])
             else:
                 cap_sto_p = (
-                    sum(m.variables['cap_sto_p_new'].loc[(stf_built, sit, sto, com),]
+                    sum(m.variables['cap_sto_p_new'].loc[(stf_built, sit, sto, com),].reset_coords(drop=True)
                         for stf_built in m_parameters['stf']
                         if (sit, sto, com, stf_built, stf) in
                         m_parameters['operational_sto_tuples']) +
@@ -279,7 +279,7 @@ def def_storage_power_rule(m, m_parameters, stf, sit, sto, com):
                     m.variables['1'])
         else:
             cap_sto_p = (
-                sum(m.variables['cap_sto_p_new'].loc[(stf_built, sit, sto, com),]
+                sum(m.variables['cap_sto_p_new'].loc[(stf_built, sit, sto, com),].reset_coords(drop=True)
                     for stf_built in m_parameters['stf']
                     if (sit, sto, com, stf_built, stf)
                     in m_parameters['operational_sto_tuples']))
@@ -288,7 +288,7 @@ def def_storage_power_rule(m, m_parameters, stf, sit, sto, com):
             cap_sto_p = (m_parameters['storage_dict']['inst-cap-p'][(stf, sit, sto, com)] *
                     m.variables['1'])
         else:
-            cap_sto_p = (m.variables['cap_sto_p_new'].loc[(stf, sit, sto, com),] +
+            cap_sto_p = (m.variables['cap_sto_p_new'].loc[(stf, sit, sto, com),].reset_coords(drop=True) +
                          m_parameters['storage_dict']['inst-cap-p'][(stf, sit, sto, com)] *
                          m.variables['1'])
 
@@ -347,57 +347,58 @@ def def_storage_energy_power_ratio_rule(m, stf, sit, sto, com):
 
 
 # storage balance
-def storage_balance(m, tm, stf, sit, com):
+def storage_balance(m, m_parameters, stf, sit, com):
     """called in commodity balance
-    For a given commodity co and timestep tm, calculate the balance of
-    storage input and output """
+    For a given commodity co , calculate the balance of
+    storage input and output at all timesteps"""
 
-    return sum(m.e_sto_in[(tm, stframe, site, storage, com)] -
-               m.e_sto_out[(tm, stframe, site, storage, com)]
-               # usage as input for storage increases consumption
-               # output from storage decreases consumption
-               for stframe, site, storage, commodity in m.sto_tuples
-               if site == sit and stframe == stf and commodity == com)
+   # usage as input for storage increases consumption
+   # output from storage decreases consumption
+    return (m.variables['e_sto_in'].loc[:,[(stframe, site, storage, com)
+        for stframe, site, storage, commodity in m_parameters['sto_tuples']
+        if site == sit and stframe == stf and commodity == com]].sum('sto_tuples') -
+        m.variables['e_sto_out'].loc[:,[(stframe, site, storage, com)
+        for stframe, site, storage, commodity in m_parameters['sto_tuples']
+        if site == sit and stframe == stf and commodity == com]].sum('sto_tuples')) 
 
 
 # storage costs
 def storage_cost(m, m_parameters, cost_type):
     """returns storage cost function for the different cost types"""
     if cost_type == 'Invest':
-        cost = sum(m.variables['cap_sto_p_new'].loc[[s]] *
+        cost = sum(m.variables['cap_sto_p_new'].loc[s,].reset_coords(drop=True) *
                    m_parameters['storage_dict']['inv-cost-p'][s] *
                    m_parameters['storage_dict']['invcost-factor'][s] +
-                   m.variables['cap_sto_c_new'].loc[[s]] *
+                   m.variables['cap_sto_c_new'].loc[s,].reset_coords(drop=True) *
                    m_parameters['storage_dict']['inv-cost-c'][s] *
                    m_parameters['storage_dict']['invcost-factor'][s]
                    for s in m_parameters['sto_tuples'])
         if m_parameters['mode']['int']:
-            cost -= sum(m.variables['cap_sto_p_new'].loc[[s]] *
+            cost -= sum(m.variables['cap_sto_p_new'].loc[s,].reset_coords(drop=True) *
                         m_parameters['storage_dict']['inv-cost-p'][s] *
                         m_parameters['storage_dict']['overpay-factor'][s] +
-                        m.variables['cap_sto_c_new'].loc[[s]] *
+                        m.variables['cap_sto_c_new'].loc[s,].reset_coords(drop=True) *
                         m_parameters['storage_dict']['inv-cost-c'][s] *
                         m_parameters['storage_dict']['overpay-factor'][s]
                         for s in m_parameters['sto_tuples'])
         return cost
     elif cost_type == 'Fixed':
-        return sum((m.variables['cap_sto_p'].loc[[s]] *
+        return sum((m_parameters['cap_sto_p'][s] *
                     m_parameters['storage_dict']['fix-cost-p'][s] +
-                    m.variables['cap_sto_c'].loc[[s]] *
+                    m_parameters['cap_sto_c'][s] *
                     m_parameters['storage_dict']['fix-cost-c'][s]) *
                    m_parameters['storage_dict']['cost_factor'][s]
                    for s in m_parameters['sto_tuples'])
     elif cost_type == 'Variable':
-        return sum(m.variables['e_sto_con'].loc[tm, s] *
+        return sum(m.variables['e_sto_con'].loc[:, s].sum() *
                    m_parameters['weight'] *
                    m_parameters['storage_dict']['var-cost-c'][s] *
                    m_parameters['storage_dict']['cost_factor'][s] +
-                   (m.variables['e_sto_in'].loc[tm, s] +
-                       m_parameters['e_sto_out'].loc[tm, s]) *
+                   (m.variables['e_sto_in'].loc[:, s].sum() +
+                       m.variables['e_sto_out'].loc[:, s].sum()) *
                    m_parameters['weight'] *
                    m_parameters['storage_dict']['var-cost-p'][s] *
                    m_parameters['storage_dict']['cost_factor'][s]
-                   for tm in m_parameters['tm']
                    for s in m_parameters['sto_tuples'])
 
 

@@ -1,5 +1,6 @@
 import math
 import pyomo.core as pyomo
+import linopy
 import pandas as pd
 import xarray as xr
 
@@ -53,9 +54,7 @@ def add_dsm(m, m_parameters):
     #     within=pyomo.NonNegativeReals,
     #     doc='DSM downshift')
 
-    # TODO : Improve preformance, avoid loops
-    # XXX : Remove this return
-    return
+    # TODO : Improve preformance, avoid loops on tm
     # DSM rules
     for (stf, sit, com) in m_parameters['dsm_site_tuples']:
         delay = max(int(1 / m_parameters['dt'] *
@@ -186,18 +185,22 @@ def res_dsm_recovery_rule(m, tm, stf, sit, com):
 
 
 # DSM surplus
-def dsm_surplus(m, tm, stf, sit, com):
+def dsm_surplus(m, m_parameters, stf, sit, com):
     """ called in vertex rule
         calculate dsm surplus"""
-    if (stf, sit, com) in m.dsm_site_tuples:
-        return (- m.dsm_up[tm, stf, sit, com] +
-                sum(m.dsm_down[t, tm, stf, sit, com]
+    if (stf, sit, com) in m_parameters['dsm_site_tuples']:
+        return (-m.variables['dsm_up'].loc[:,
+            (stf, sit, com)].reset_coords(drop=True) +
+            linopy.expressions.merge([m.variables['dsm_down'].loc[[(t, tm, stf, sit, com)
                     for t in dsm_time_tuples(
-                    tm, m.timesteps[1:],
-                    max(int(1 / m.dt *
-                        m.dsm_dict['delay'][(stf, sit, com)]), 1))))
+                    tm, m_parameters['timesteps'][1:],
+                    max(int(1 / m_parameters['dt'] *
+                        m_parameters['dsm_dict']['delay'][(stf, sit, com)]), 1))]]
+                    .sum().expand_dims("tm")
+                    for tm in m_parameters["tm"]], dim="tm")
+            .assign_coords({"tm":("tm", m_parameters["tm"])}))
     else:
-        return 0
+        return linopy.LinearExpression()
 
 
 def dsm_down_time_tuples(time, sit_com_tuple, m_parameters):
@@ -210,21 +213,17 @@ def dsm_down_time_tuples(time, sit_com_tuple, m_parameters):
         A list of possible time tuples depending on site and commodity
     """
 
-    delay = m_parameters['dsm_dict']['delay']
     ub = max(time)
     lb = min(time)
     time_list = []
 
     for (stf, site, commodity) in sit_com_tuple:
-        for step1 in time:
-            for step2 in range(step1 -
-                               max(int(delay[stf, site, commodity] /
-                                   m_parameters['dt']), 1),
-                               step1 +
-                               max(int(delay[stf, site, commodity] /
-                                   m_parameters['dt']), 1) + 1):
-                if lb <= step2 <= ub:
-                    time_list.append((step1, step2, stf, site, commodity))
+        delay = max(int(m_parameters['dsm_dict']['delay'][stf, site, commodity] /
+                                   m_parameters['dt']), 1)
+        time_list += [(step1, step2, stf, site, commodity)
+                      for step1 in time
+                      for step2 in range(max(lb, step1 - delay),
+                                         min(ub, step1 + delay)+1)]
 
     return time_list
 
@@ -245,9 +244,8 @@ def dsm_time_tuples(timestep, time, delay):
 
     time_list = list()
 
-    for step in range(timestep - delay, timestep + delay + 1):
-        if step >= lb and step <= ub:
-            time_list.append(step)
+    for step in range(max(lb, timestep - delay), min(ub, timestep + delay) + 1):
+        time_list.append(step)
 
     return time_list
 
@@ -267,8 +265,7 @@ def dsm_recovery(timestep, time, recov):
 
     time_list = list()
 
-    for step in range(timestep, timestep+recov):
-        if step <= ub:
-            time_list.append(step)
+    for step in range(timestep, min(ub+1, timestep+recov)):
+        time_list.append(step)
 
     return time_list

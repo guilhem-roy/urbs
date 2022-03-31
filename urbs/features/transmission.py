@@ -248,20 +248,10 @@ def add_transmission_dc(m, m_parameters):
 
     m.add_variables(coords=[m_parameters['tm'], m_parameters['stf'],
         m_parameters['sit']], name="voltage_angle")
-    m.add_variables(coords=[m_parameters['tm'], m_parameters['stf'],
-        m_parameters['sit'].copy(name="sit1")], name="voltage_angle1")
-    # Linopy does weird things if we try to compare voltage_angle to itself so
-    # we create another variable voltage_angle1 and ensure that both variables
-    # are equal with a constraint
     # m.voltage_angle = pyomo.Var(
     #     m.tm, m.stf, m.sit,
     #     within=pyomo.Reals,
     #     doc='Voltage angle of a site')
-
-    # Ensure that both voltage_angle are equal
-    m.add_constraints(m.variables['voltage_angle'] -
-            m.variables['voltage_angle1'] == 0,
-            name="angle_equality")
 
     # transmission
     m.add_constraints(
@@ -275,8 +265,8 @@ def add_transmission_dc(m, m_parameters):
     #     doc='transmission output = transmission input * efficiency')
     for (stf, sin, sout, tra, com) in m_parameters['tra_tuples_dc']:
         m.add_constraints(m.variables['e_tra_in'].loc[:, (stf, sin, sout, tra, com)] + 
-            (m.variables['voltage_angle'].loc[:, stf, sin] -
-                m.variables['voltage_angle1'].loc[:, stf, sout]) / 57.2958 * 
+            (m.variables['voltage_angle'].loc[:, stf, sin].reset_coords(drop=True) -
+                m.variables['voltage_angle'].loc[:, stf, sout]).reset_coords(drop=True) / 57.2958 * 
                 (-1 / m_parameters['transmission_dict']['reactance'][(stf, sin, sout, tra, com)])
                 * m_parameters['transmission_dict']['base_voltage'][(stf, sin, sout, tra, com)]
                 * m_parameters['transmission_dict']['base_voltage'][(stf, sin, sout, tra, com)],
@@ -289,11 +279,11 @@ def add_transmission_dc(m, m_parameters):
         #         '* -1 *(-1/reactance) * (base voltage)^2')
         m.add_constraints(- m_parameters['transmission_dict']['difflimit'][
             (stf, sin, sout, tra, com)] <=
-            (m.variables['voltage_angle'].loc[:, stf, sin] -
-                m.variables['voltage_angle1'].loc[:, stf, sout]),
+            (m.variables['voltage_angle'].loc[:, stf, sin].reset_coords(drop=True) -
+                m.variables['voltage_angle'].loc[:, stf, sout].reset_coords(drop=True)),
             name="def_angle_limit_low"+str((stf, sin, sout, tra, com)))
-        m.add_constraints((m.variables['voltage_angle'].loc[:, stf, sin] -
-            m.variables['voltage_angle1'].loc[:, stf, sout]) <=
+        m.add_constraints((m.variables['voltage_angle'].loc[:, stf, sin].reset_coords(drop=True) -
+            m.variables['voltage_angle'].loc[:, stf, sout].reset_coords(drop=True)) <=
             m_parameters['transmission_dict']['difflimit'][
                 (stf, sin, sout, tra, com)],
                 name="def_angle_limit_high"+str((stf, sin, sout, tra, com)))
@@ -375,7 +365,8 @@ def def_transmission_capacity_rule(m, m_parameters, stf, sin, sout, tra, com):
                     m.variables['1'])
             else:
                 cap_tra = (
-                        sum(m.variables['cap_tra_new'].loc[:(stf_built, sin, sout, tra, com)]
+                        sum(m.variables['cap_tra_new'].loc[(stf_built, sin,
+                            sout, tra, com),].reset_coords(drop=True)
                         for stf_built in m_parameters['stf']
                         if (sin, sout, tra, com, stf_built, stf) in
                         m_parameters['operational_tra_tuples']) +
@@ -384,7 +375,8 @@ def def_transmission_capacity_rule(m, m_parameters, stf, sin, sout, tra, com):
                     m.variables['1'])
         else:
             cap_tra = (
-                    sum(m.variables['cap_tra_new'].loc[:(stf_built, sin, sout, tra, com)]
+                    sum(m.variables['cap_tra_new'].loc[(stf_built, sin, sout,
+                        tra, com),].reset_coords(drop=True)
                     for stf_built in m_parameters['stf']
                     if (sin, sout, tra, com, stf_built, stf) in
                     m_parameters['operational_tra_tuples']))
@@ -395,7 +387,8 @@ def def_transmission_capacity_rule(m, m_parameters, stf, sin, sout, tra, com):
                                    [(stf, sin, sout, tra, com)] *
                        m.variables["1"])
         else:
-            cap_tra = (m.variables['cap_tra_new'].loc[:(stf, sin, sout, tra, com)] +
+            cap_tra = (m.variables['cap_tra_new'].loc[(stf, sin, sout, tra,
+                       com),].reset_coords(drop=True) +
                        m_parameters['transmission_dict']['inst-cap'][
                            (stf, sin, sout, tra, com)] *
                        m.variables["1"])
@@ -461,63 +454,65 @@ def res_transmission_symmetry_rule(m, stf, sin, sout, tra, com):
 
 
 # transmission balance
-def transmission_balance(m, tm, stf, sit, com):
+def transmission_balance(m, m_parameters, stf, sit, com):
     """called in commodity balance
     For a given commodity co and timestep tm, calculate the balance of
     import and export """
 
-    return (sum(m.e_tra_in[(tm, stframe, site_in, site_out,
-                            transmission, com)]
+    return (m.variables['e_tra_in'].loc[:,[(stframe, site_in, site_out,
+                            transmission, com)
                 # exports increase balance
                 for stframe, site_in, site_out, transmission, commodity
-                in m.tra_tuples
+                in m_parameters['tra_tuples']
                 if (site_in == sit and stframe == stf and
-                    commodity == com)) -
-            sum(m.e_tra_out[(tm, stframe, site_in, site_out,
-                             transmission, com)]
+                    commodity == com)]].sum('tra_tuples') -
+                m.variables['e_tra_out'].loc[:,[(stframe, site_in, site_out,
+                             transmission, com)
                 # imports decrease balance
                 for stframe, site_in, site_out, transmission, commodity
-                in m.tra_tuples
+                in m_parameters['tra_tuples']
                 if (site_out == sit and stframe == stf and
-                    commodity == com)))
+                    commodity == com)]].sum('tra_tuples'))
 
 
 # transmission cost function
-def transmission_cost(m, cost_type):
+def transmission_cost(m, m_parameters, cost_type):
     """returns transmission cost function for the different cost types"""
     if cost_type == 'Invest':
-        cost = sum(m.cap_tra_new[t] *
-                   m.transmission_dict['inv-cost'][t] *
-                   m.transmission_dict['invcost-factor'][t]
-                   for t in m.tra_tuples)
-        if m.mode['int']:
-            cost -= sum(m.cap_tra_new[t] *
-                        m.transmission_dict['inv-cost'][t] *
-                        m.transmission_dict['overpay-factor'][t]
-                        for t in m.tra_tuples)
+        cost = linopy.expressions.merge([m.variables['cap_tra_new'].loc[t,].reset_coords(drop=True)
+            .reset_coords(drop=True) *
+            m_parameters['transmission_dict']['inv-cost'][t] *
+            m_parameters['transmission_dict']['invcost-factor'][t]
+            for t in m_parameters['tra_tuples']])
+        if m_parameters['mode']['int']:
+            cost = linopy.expressions.merge([cost] + [
+                -m.variables['cap_tra_new'].loc[t,].reset_coords(drop=True) *
+                m_parameters['transmission_dict']['inv-cost'][t] *
+                m_parameters['transmission_dict']['overpay-factor'][t]
+                for t in m_parameters['tra_tuples']])
         return cost
     elif cost_type == 'Fixed':
-        return sum(m.cap_tra[t] * m.transmission_dict['fix-cost'][t] *
-                   m.transmission_dict['cost_factor'][t]
-                   for t in m.tra_tuples)
+        return sum(m_parameters['cap_tra'][t] * m_parameters['transmission_dict']['fix-cost'][t] *
+                   m_parameters['transmission_dict']['cost_factor'][t]
+                   for t in m_parameters['tra_tuples'])
     elif cost_type == 'Variable':
-        if m.mode['dpf']:
-            return sum(m.e_tra_in[(tm,) + t] * m.weight *
-                       m.transmission_dict['var-cost'][t] *
-                       m.transmission_dict['cost_factor'][t]
-                       for tm in m.tm
-                       for t in m.tra_tuples_tp) + \
-                   sum(m.e_tra_abs[(tm,) + t] * m.weight *
-                       m.transmission_dict['var-cost'][t] *
-                       m.transmission_dict['cost_factor'][t]
-                       for tm in m.tm
-                       for t in m.tra_tuples_dc)
+        if m_parameters['mode']['dpf']:
+            return sum(m.variables['e_tra_in'].loc[:, t].sum() *
+                       m_parameters['weight'] *
+                       m_parameters['transmission_dict']['var-cost'][t] *
+                       m_parameters['transmission_dict']['cost_factor'][t]
+                       for t in m_parameters['tra_tuples_tp']) + \
+                   sum(m.variables['e_tra_abs'].loc[:, t].sum() *
+                       m_parameters['weight'] *
+                       m_parameters['transmission_dict']['var-cost'][t] *
+                       m_parameters['transmission_dict']['cost_factor'][t]
+                       for t in m_parameters['tra_tuples_dc'])
         else:
-            return sum(m.e_tra_in[(tm,) + t] * m.weight *
-                       m.transmission_dict['var-cost'][t] *
-                       m.transmission_dict['cost_factor'][t]
-                       for tm in m.tm
-                       for t in m.tra_tuples)
+            return sum(m.variables['e_tra_in'].loc[:, t].sum() *
+                       m_parameters['weight'] *
+                       m_parameters['transmission_dict']['var-cost'][t] *
+                       m_parameters['transmission_dict']['cost_factor'][t]
+                       for t in m_parameters['tra_tuples'])
 
 
 def op_tra_tuples(tra_tuple, m_parameters):

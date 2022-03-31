@@ -1,5 +1,6 @@
 import math
 import pyomo.core as pyomo
+import linopy
 import pandas as pd
 from .modelhelper import commodity_subset
 
@@ -201,58 +202,65 @@ def search_sell_buy_tuple(m_parameters, stf, sit_in, pro_in, coin):
     return None
 
 
-def bsp_surplus(m, tm, stf, sit, com, com_type):
+def bsp_surplus(m, m_parameters, stf, sit, com, com_type):
 
-    power_surplus = 0
+    power_surplus = linopy.LinearExpression()
 
     # if com is a sell commodity, the commodity source term e_co_sell
     # can supply a possibly positive power_surplus
-    if com in m.com_sell:
-        power_surplus -= m.e_co_sell[tm, stf, sit, com, com_type]
+    if com in m_parameters['com_sell']:
+        power_surplus -= m.variables['e_co_sell'].loc[:,
+                (stf, sit, com, com_type)].reset_coords(drop=True)
 
     # if com is a buy commodity, the commodity source term e_co_buy
     # can supply a possibly negative power_surplus
-    if com in m.com_buy:
-        power_surplus += m.e_co_buy[tm, stf, sit, com, com_type]
+    if com in m_parameters['com_buy']:
+        power_surplus += m.variables['e_co_buy'].loc[:,
+                (stf, sit, com, com_type)].reset_coords(drop=True)
 
     return power_surplus
 
 
-def revenue_costs(m):
-    sell_tuples = commodity_subset(m.com_tuples, m.com_sell)
+def revenue_costs(m, m_parameters):
+    sell_tuples = commodity_subset(m_parameters['com_tuples'],
+            m_parameters['com_sell'])
     try:
         return -sum(
-            m.e_co_sell[(tm,) + c] *
-            m.buy_sell_price_dict[c[2]][(c[0], tm)] * m.weight *
-            m.commodity_dict['price'][c] *
-            m.commodity_dict['cost_factor'][c]
-            for tm in m.tm
+            m.variables['e_co_sell'].loc[tm, c].reset_coords(drop=True) *
+            m_parameters['buy_sell_price_dict'][c[2]][(c[0], tm)] *
+            m_parameters['weight'] *
+            m_parameters['commodity_dict']['price'][c] *
+            m_parameters['commodity_dict']['cost_factor'][c]
+            for tm in m_parameters['tm']
             for c in sell_tuples)
     except KeyError:
         return -sum(
-            m.e_co_sell[(tm,) + c] *
-            m.buy_sell_price_dict[c[2], ][(c[0], tm)] * m.weight *
-            m.commodity_dict['price'][c] *
-            m.commodity_dict['cost_factor'][c]
-            for tm in m.tm
+            m.variables['e_co_sell'].loc[tm, c].reset_coords(drop=True) *
+            m_parameters['buy_sell_price_dict'][c[2], ][(c[0], tm)] * 
+            m_parameters['weight'] *
+            m_parameters['commodity_dict']['price'][c] *
+            m_parameters['commodity_dict']['cost_factor'][c]
+            for tm in m_parameters['tm']
             for c in sell_tuples)
 
 
-def purchase_costs(m):
-    buy_tuples = commodity_subset(m.com_tuples, m.com_buy)
+def purchase_costs(m, m_parameters):
+    buy_tuples = commodity_subset(m_parameters['com_tuples'], m_parameters['com_buy'])
     try:
         return sum(
-            m.e_co_buy[(tm,) + c] *
-            m.buy_sell_price_dict[c[2]][(c[0], tm)] * m.weight *
-            m.commodity_dict['price'][c] *
-            m.commodity_dict['cost_factor'][c]
-            for tm in m.tm
+            m.variables['e_co_buy'].loc[tm, c].reset_coords(drop=True) *
+            m_parameters['buy_sell_price_dict'][c[2]][(c[0], tm)] * 
+            m_parameters['weight'] *
+            m_parameters['commodity_dict']['price'][c] *
+            m_parameters['commodity_dict']['cost_factor'][c]
+            for tm in m_parameters['tm']
             for c in buy_tuples)
     except KeyError:
         return sum(
-            m.e_co_buy[(tm,) + c] *
-            m.buy_sell_price_dict[c[2], ][(c[0], tm)] * m.weight *
-            m.commodity_dict['price'][c] *
-            m.commodity_dict['cost_factor'][c]
-            for tm in m.tm
+            m.variables['e_co_buy'].loc[tm, c].reset_coords(drop=True) *
+            m_parameters['buy_sell_price_dict'][c[2], ][(c[0], tm)] * 
+            m_parameters['weight'] *
+            m_parameters['commodity_dict']['price'][c] *
+            m_parameters['commodity_dict']['cost_factor'][c]
+            for tm in m_parameters['tm']
             for c in buy_tuples)

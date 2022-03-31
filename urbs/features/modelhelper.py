@@ -1,5 +1,6 @@
 from .transmission import transmission_balance
 from .storage import storage_balance
+import linopy
 
 
 def invcost_factor(dep_prd, interest, discount=None, year_built=None,
@@ -112,37 +113,38 @@ def effective_distance(dist, m_parameters):
         return (1 - (1 + discount) ** (-dist)) / discount
 
 
-def commodity_balance(m, m_parameters, tm, stf, sit, com):
-    """Calculate commodity balance at given timestep.
-    For a given commodity co and timestep tm, calculate the balance of
-    consumed (to process/storage/transmission, counts positive) and provided
-    (from process/storage/transmission, counts negative) commodity flow. Used
-    as helper function in create_model for constraints on demand and stock
+def commodity_balance(m, m_parameters, stf, sit, com):
+    """Calculate commodity balance.
+    For a given commodity co, calculate the balance of consumed (to
+    process/storage/transmission, counts positive) and provided (from
+    process/storage/transmission, counts negative) commodity flow. Used as
+    helper function in create_model for constraints on demand and stock
     commodities.
     Args:
         m: the model object
         m_parameters: the parameters of the model
-        tm: the timestep
         stf: the support time frame
         sit: the site
         com: the commodity
     Returns
         balance: net value of consumed (positive) or provided (negative) power
     """
-    balance = (sum(m.variables['e_pro_in'][:(tm, stframe, site, process, com)]
+    balance = (m.variables['e_pro_in'].loc[:,[(stframe, site, process, com)
                    # usage as input for process increases balance
                    for stframe, site, process in m_parameters['pro_tuples']
                    if site == sit and stframe == stf and
-                   (stframe, process, com) in m_parameters['r_in_dict']) -
-               sum(m.variables['e_pro_out'][:(tm, stframe, site, process, com)]
+                   (stframe, process, com) in m_parameters['r_in_dict']]].sum('pro_input_tuples') -
+               m.variables['e_pro_out'].loc[:,[(stframe, site, process, com)
                    # output from processes decreases balance
                    for stframe, site, process in m_parameters['pro_tuples']
                    if site == sit and stframe == stf and
-                   (stframe, process, com) in m_parameters['r_out_dict']))
+                   (stframe, process, com) in m_parameters['r_out_dict']]].sum('pro_output_tuples'))
     if m_parameters['mode']['tra']:
-        balance += transmission_balance(m, m_parameters, tm, stf, sit, com)
+        balance = linopy.expressions.merge([balance,
+            transmission_balance(m, m_parameters, stf, sit, com)])
     if m_parameters['mode']['sto']:
-        balance += storage_balance(m, m_parameters, tm, stf, sit, com)
+        balance = linopy.expressions.merge([balance,
+            storage_balance(m, m_parameters, stf, sit, com)])
 
     return balance
 
