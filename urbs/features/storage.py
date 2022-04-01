@@ -39,7 +39,7 @@ def add_storage(m, m_parameters):
         #     doc='Processes that are still operational through stf_later'
         #         '(and the relevant years following), if built in stf'
         #         'in stf.')
-        m_parameters['inst_sto_tuples'] = pd.index([(sit, sto, com, stf)
+        m_parameters['inst_sto_tuples'] = pd.Index([(sit, sto, com, stf)
                 for (sit, sto, com, stf)
                 in inst_sto_tuples(m_parameters)],
                 name="inst_sto_tuples", tupleize_cols=False)
@@ -243,7 +243,7 @@ def def_storage_capacity_rule(m, m_parameters, stf, sit, sto, com):
         else:
             cap_sto_c = (
                 sum(m.variables['cap_sto_c_new'].loc[(stf_built, sit, sto, com),].reset_coords(drop=True)
-                    for stf_built in m.stf
+                    for stf_built in m_parameters['stf']
                     if (sit, sto, com, stf_built, stf) in
                     m_parameters['operational_sto_tuples']))
     else:
