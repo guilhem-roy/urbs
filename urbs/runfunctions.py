@@ -1,6 +1,7 @@
 import os
 import pyomo.environ
 from pyomo.opt.base import SolverFactory
+import linopy
 from datetime import datetime, date
 from .model import create_model
 from .report import *
@@ -31,29 +32,30 @@ def prepare_result_directory(result_name):
     return result_dir
 
 
-def setup_solver(optim, logfile='solver.log'):
+def setup_solver(solver, logfile='solver.log'):
     """ """
-    if optim.name == 'gurobi':
+    options = dict()
+    if solver == 'gurobi':
         # reference with list of option names
         # http://www.gurobi.com/documentation/5.6/reference-manual/parameters
-        optim.set_options("logfile={}".format(logfile))
-        # optim.set_options("timelimit=7200")  # seconds
-        # optim.set_options("mipgap=5e-4")  # default = 1e-4
-    elif optim.name == 'glpk':
+        options["logfile"] = logfile
+        # options["timelimit"] = 7200  # seconds
+        # options["mipgap"] = 5e-4  # default = 1e-4
+    elif solver == 'glpk':
         # reference with list of options
         # execute 'glpsol --help'
-        optim.set_options("log={}".format(logfile))
-        # optim.set_options("tmlim=7200")  # seconds
-        # optim.set_options("mipgap=.0005")
-    elif optim.name == 'cplex':
-        optim.set_options("log={}".format(logfile))
+        options["log"]=logfile
+        # options["tmlim"] = 7200  # seconds
+        # options["mipgap"] = .0005
+    elif solver == 'cplex':
+        options["log"]=logfile
     else:
         print("Warning from setup_solver: no options set for solver "
               "'{}'!".format(optim.name))
-    return optim
+    return options
 
 
-def run_scenario(input_files, Solver, timesteps, scenario, result_dir, dt,
+def run_scenario(input_files, solver, timesteps, scenario, result_dir, dt,
                  objective, plot_tuples=None,  plot_sites_name=None,
                  plot_periods=None, report_tuples=None,
                  report_sites_name=None):
@@ -92,7 +94,7 @@ def run_scenario(input_files, Solver, timesteps, scenario, result_dir, dt,
     validate_dc_objective(data, objective)
 
     # create model
-    prob = create_model(data, dt, timesteps, objective)
+    (prob, prob_params) = create_model(data, dt, timesteps, objective)
     # prob_filename = os.path.join(result_dir, 'model.lp')
     # prob.write(prob_filename, io_options={'symbolic_solver_labels':True})
 
@@ -100,17 +102,17 @@ def run_scenario(input_files, Solver, timesteps, scenario, result_dir, dt,
     log_filename = os.path.join(result_dir, '{}.log').format(sce)
 
     # solve model and read results
-    optim = SolverFactory(Solver)  # cplex, glpk, gurobi, ...
-    optim = setup_solver(optim, logfile=log_filename)
-    result = optim.solve(prob, tee=True)
-    assert str(result.solver.termination_condition) == 'optimal'
+    solver_options = setup_solver(solver, log_filename)
+    prob.solve(solver, log_fn=log_filename, **solver_options)
+    print(prob)
 
     # save problem solution (and input data) to HDF5 file
-    save(prob, os.path.join(result_dir, '{}.h5'.format(sce)))
+    save(prob, prob_params, os.path.join(result_dir, '{}.h5'.format(sce)))
 
     # write report to spreadsheet
     report(
         prob,
+        prob_params,
         os.path.join(result_dir, '{}.xlsx').format(sce),
         report_tuples=report_tuples,
         report_sites_name=report_sites_name)
@@ -118,6 +120,7 @@ def run_scenario(input_files, Solver, timesteps, scenario, result_dir, dt,
     # result plots
     result_figures(
         prob,
+        prob_params,
         os.path.join(result_dir, '{}'.format(sce)),
         timesteps,
         plot_title_prefix=sce.replace('_', ' '),
